@@ -38,6 +38,8 @@ class MotionReference:
         self.body_pos_w = motion["body_pos_w"]
         self.body_quat_w = motion["body_quat_w"]
         self.joint_pos = self._reorder_joints(motion["joint_pos"], meta["joint_names"])
+        joint_vel = motion.get("joint_vel", np.zeros_like(motion["joint_pos"]))
+        self.joint_vel = self._reorder_joints(joint_vel, meta["joint_names"])
         self.object_geo = motion["object_points"].reshape(-1, 3)
 
         self.future_steps = np.asarray(future_steps, dtype=np.int64)
@@ -49,6 +51,10 @@ class MotionReference:
 
     @staticmethod
     def _ordered_joint_names(source_joint_names):
+        # Retargeted robots (for example TienKung) do not use Unitree names.
+        # Preserve their native order so 20-DoF motion arrays remain aligned.
+        if not any(name in UNITREE_JOINT_NAMES for name in source_joint_names):
+            return list(source_joint_names)
         extra_names = [name for name in source_joint_names if name not in UNITREE_JOINT_NAMES]
         return UNITREE_JOINT_NAMES + extra_names
 
@@ -62,6 +68,7 @@ class MotionReference:
         self.t = (self.t + 1) % self.motion_steps
         future_idx = np.clip(self.t + self.future_steps, 0, self.motion_steps - 1)
         self.ref_joint_pos_future = self.joint_pos[future_idx][:, self.joint_indices]
+        self.ref_joint_vel_future = self.joint_vel[future_idx][:, self.joint_indices]
         self.ref_body_pos_future_w = self.body_pos_w[future_idx][:, self.body_indices]
         self.ref_root_pos_w = self.body_pos_w[self.t, self.root_body_idx]
         self.ref_root_quat_w = self._root_quat_at(self.t)
@@ -78,6 +85,9 @@ class MotionReference:
 
     def get_ref_joint_pos_future(self):
         return self.ref_joint_pos_future.reshape(-1)
+
+    def get_ref_joint_vel_future(self):
+        return self.ref_joint_vel_future.reshape(-1)
 
     def get_ref_motion_phase(self):
         return np.array([self.t / self.motion_steps], dtype=np.float32)

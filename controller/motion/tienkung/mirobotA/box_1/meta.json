@@ -1,0 +1,142 @@
+{
+  "body_names": [
+    "pelvis",
+    "head",
+    "hip_roll_l_link",
+    "hip_roll_r_link",
+    "shoulder_pitch_l_link",
+    "shoulder_pitch_r_link",
+    "hip_pitch_l_link",
+    "hip_pitch_r_link",
+    "shoulder_roll_l_link",
+    "shoulder_roll_r_link",
+    "hip_yaw_l_link",
+    "hip_yaw_r_link",
+    "shoulder_yaw_l_link",
+    "shoulder_yaw_r_link",
+    "knee_pitch_l_link",
+    "knee_pitch_r_link",
+    "elbow_pitch_l_link",
+    "elbow_pitch_r_link",
+    "ankle_pitch_l_link",
+    "ankle_pitch_r_link",
+    "left_hand",
+    "right_hand",
+    "ankle_roll_l_link",
+    "ankle_roll_r_link",
+    "mybox"
+  ],
+  "joint_names": [
+    "hip_roll_l_joint",
+    "hip_roll_r_joint",
+    "shoulder_pitch_l_joint",
+    "shoulder_pitch_r_joint",
+    "hip_pitch_l_joint",
+    "hip_pitch_r_joint",
+    "shoulder_roll_l_joint",
+    "shoulder_roll_r_joint",
+    "hip_yaw_l_joint",
+    "hip_yaw_r_joint",
+    "shoulder_yaw_l_joint",
+    "shoulder_yaw_r_joint",
+    "knee_pitch_l_joint",
+    "knee_pitch_r_joint",
+    "elbow_pitch_l_joint",
+    "elbow_pitch_r_joint",
+    "ankle_pitch_l_joint",
+    "ankle_pitch_r_joint",
+    "ankle_roll_l_joint",
+    "ankle_roll_r_joint"
+  ],
+  "contact_body_names": [
+    "ankle_roll_l_link",
+    "ankle_roll_r_link",
+    "left_hand",
+    "right_hand"
+  ],
+  "fps": 50.0,
+  "retarget_source": "data/motion/g1/mirobotA/box_1",
+  "object_retarget": {
+    "mode": "hand_contact",
+    "smoothing_window": 11,
+    "contact_blend_frames": 10,
+    "motion_smoothing_window": 21,
+    "joint_limit_factor": 0.9,
+    "joint_limit_margin": 0.05,
+    "post_release_stabilization": {
+      "enabled": true,
+      "release_frame": 321,
+      "source_recovery_frames": 88,
+      "output_recovery_frames": 176,
+      "time_scale": 2.0,
+      "hold_frames": 50,
+      "output_frames": 548
+    },
+    "feet_contact_inference": {
+      "feet_body_names": [
+        "ankle_roll_l_link",
+        "ankle_roll_r_link"
+      ],
+      "ground_height_estimate": [
+        0.02478154022246599,
+        0.023834098316729068
+      ],
+      "enter_height": [
+        0.04978154022246599,
+        0.048834098316729066
+      ],
+      "exit_height": [
+        0.074781540222466,
+        0.07383409831672907
+      ],
+      "enter_velocity": 0.35,
+      "exit_velocity": 0.75,
+      "max_double_air_frames": 0,
+      "repaired_double_air_frames": 0,
+      "double_air_frames_after_repair": 0,
+      "contact_frame_count": [
+        514,
+        503
+      ]
+    },
+    "hand_collider_radius": 0.05,
+    "hand_contact_clearance": 0.03,
+    "hand_collider_penetration": 0.020000000000000004,
+    "surface_contact_anchors": [
+      [
+        -0.12073666030053415,
+        0.18000000715255737,
+        0.029541496716021323
+      ],
+      [
+        -0.09144168881356293,
+        -0.18000000715255737,
+        0.06542811308398284
+      ]
+    ],
+    "hand_center_contact_anchors": [
+      [
+        -0.12073666030053415,
+        0.21000000715255737,
+        0.029541496716021323
+      ],
+      [
+        -0.09144168881356293,
+        -0.21000000715255737,
+        0.06542811308398284
+      ]
+    ],
+    "contact_eef_offsets": [
+      [
+        0.004178894383157538,
+        -0.02958967908618801,
+        0.0026434321082301868
+      ],
+      [
+        0.004309258509701695,
+        0.02957146082996683,
+        0.0026379908033011003
+      ]
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from tqdm import tqdm
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from utils.intermimic import InterMimicRod
+from utils.tienkung import TienKungInterMimic
 from utils.sim import get_obs_from_mujoco, pd_control
 
 
@@ -58,6 +60,18 @@ TASKS = {
         "policy": "controller/policy/haic/skateboard/policy-9kykb93o-6000.onnx",
         "motion": "controller/motion/mirobotA/board6",
         "xml": "assets/robots/g1/g1_29dof_rev_1_0_skateboard.xml",
+    },
+    "tienkung_box": {
+        # HAIC exports are intentionally kept outside this repository.  Use
+        # --policy or TIENKUNG_POLICY to point at the exported ONNX file.
+        "policy": os.environ.get(
+            "TIENKUNG_POLICY", "controller/policy/haic/tienkung/box_1.onnx"
+        ),
+        "motion": "controller/motion/tienkung/mirobotA/box_1",
+        "xml": "assets/robots/tienkung/tienkung_box.xml",
+        "robot": "tienkung",
+        "num_actuators": 20,
+        "root_height": 1.0,
     },
 }
 
@@ -126,7 +140,7 @@ def resolve_project_path(path):
     return (PROJECT_ROOT / path).resolve()
 
 
-def validate_tasks(task_names=None):
+def validate_tasks(task_names=None, require_tienkung_policy=False):
     missing = []
     selected = task_names if task_names is not None else sorted(TASKS)
     for task_name in selected:
@@ -135,7 +149,9 @@ def validate_tasks(task_names=None):
         motion_path = resolve_project_path(task["motion"])
         xml_path = resolve_project_path(task["xml"])
 
-        if not policy_path.is_file():
+        if not policy_path.is_file() and (
+            task.get("robot") != "tienkung" or require_tienkung_policy
+        ):
             missing.append(f"{task_name}: missing policy {policy_path}")
         if not motion_path.is_dir():
             missing.append(f"{task_name}: missing motion folder {motion_path}")
@@ -154,7 +170,7 @@ class HaicDeployment:
     def __init__(self, args):
         task = TASKS[args.task]
         self.task_name = args.task
-        self.policy_path = resolve_project_path(task["policy"])
+        self.policy_path = resolve_project_path(args.policy or task["policy"])
         self.motion_path = resolve_project_path(task["motion"])
         self.mjcf_path = resolve_project_path(task["xml"])
         self.sim_dt = args.sim_dt
@@ -163,14 +179,21 @@ class HaicDeployment:
         self.video_width = args.video_width
         self.video_height = args.video_height
         self.video_codec = args.video_codec
-        self.num_actuators = args.num_actuators
+        self.num_actuators = args.num_actuators or task.get("num_actuators", 29)
+        self.root_height = task.get("root_height", 0.80)
         self.real_time = not args.no_real_time
         self.sim_time = 0.0
         self.next_viewer_time = 0.0
         self.policy_output = None
         self.sim_steps_per_control = args.sim_steps_per_control
 
-        self.controller = InterMimicRod(self.policy_path, self.motion_path)
+        controller_cls = TienKungInterMimic if task.get("robot") == "tienkung" else InterMimicRod
+        self.controller = controller_cls(self.policy_path, self.motion_path)
+        if self.num_actuators != self.controller.num_dof:
+            raise ValueError(
+                f"Task {self.task_name} expects {self.controller.num_dof} actuators, "
+                f"but --num_actuators={self.num_actuators} was requested"
+            )
         self.control_steps = self.controller.refmotion.motion_steps
         self.sim_duration = self.control_steps * self.control_dt
 
@@ -207,9 +230,20 @@ class HaicDeployment:
 
     def reset(self):
         mujoco.mj_resetData(self.model, self.data)
-        self.data.qpos[:3] = [0.0, 0.0, 0.80]
+        self.data.qpos[:3] = [0.0, 0.0, self.root_height]
         self.data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
-        self.data.qpos[7:7 + self.num_actuators] = RECOVERY_STAND_DEFAULT_POS
+        default_pos = (
+            self.controller.default_pos
+            if TASKS[self.task_name].get("robot") == "tienkung"
+            else RECOVERY_STAND_DEFAULT_POS
+        )
+        self.data.qpos[7:7 + self.num_actuators] = default_pos
+        object_joint_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_JOINT, "floating_box_base_joint"
+        )
+        if object_joint_id >= 0:
+            object_qpos = self.model.jnt_qposadr[object_joint_id]
+            self.data.qpos[object_qpos:object_qpos + 7] = [0.45, 0.0, 0.17, 1.0, 0.0, 0.0, 0.0]
         self.data.qvel[:] = 0.0
         self.controller.reset_history()
         mujoco.mj_forward(self.model, self.data)
@@ -301,7 +335,14 @@ def main():
     parser.add_argument("--sim_dt", type=float, default=0.002)
     parser.add_argument("--control_dt", type=float, default=0.02)
     parser.add_argument("--viewer_dt", type=float, default=0.01)
-    parser.add_argument("--num_actuators", type=int, default=29)
+    parser.add_argument(
+        "--num_actuators", type=int, default=None,
+        help="Override the task actuator count (defaults to 29 for G1, 20 for TienKung)",
+    )
+    parser.add_argument(
+        "--policy", type=Path, default=None,
+        help="Override the ONNX policy path; useful for the HAIC TienKung export",
+    )
     parser.add_argument("--record_video", action="store_true")
     parser.add_argument("--video_width", type=int, default=1280)
     parser.add_argument("--video_height", type=int, default=720)
@@ -321,7 +362,9 @@ def main():
         parser.error("--control_dt must be an integer multiple of --sim_dt")
     args.sim_steps_per_control = sim_steps_per_control
 
-    validate_tasks()
+    if args.policy is not None:
+        TASKS[args.task] = {**TASKS[args.task], "policy": str(args.policy)}
+    validate_tasks(require_tienkung_policy=args.policy is not None)
     if args.check_assets:
         print("Available task triplets:")
         for task_name, task in TASKS.items():

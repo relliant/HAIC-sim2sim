@@ -65,7 +65,15 @@ python scripts/deploy_haic.py --task pull_cart_box
 python scripts/deploy_haic.py --task push_cart
 python scripts/deploy_haic.py --task push_wheelchair
 python scripts/deploy_haic.py --task skateboard
+python scripts/deploy_haic.py --task tienkung_box --policy /path/to/tienkung_box.onnx
 ```
+
+The `tienkung_box` task uses the 20-DoF TienKung model and the retargeted
+HAIC `box_1` reference motion.  The trained HAIC TienKung policy is not
+checked into this sim2sim repository; export it from HAIC with
+`export_policy=true`, then pass its path with `--policy` (or set
+`TIENKUNG_POLICY`).  The task's MuJoCo model and motion data are included
+under `assets/robots/tienkung/` and `controller/motion/tienkung/`.
 
 
 
@@ -84,6 +92,8 @@ python scripts/deploy_haic.py \
 - `--control_dt`: policy/control timestep. Must be an integer multiple of `--sim_dt`.
 - `--viewer_dt`: viewer/video render interval.
 - `--num_actuators`: expected robot actuator count.
+- `--policy`: override the task's ONNX policy path.  TienKung defaults to 20
+  actuators and requires an exported HAIC TienKung policy.
 - `--record_video`: save a 2x-speed MP4 named `<task>_sim2sim.mp4`.
 - `--video_width`: recorded video width. Default: `1280`.
 - `--video_height`: recorded video height. Default: `720`.
