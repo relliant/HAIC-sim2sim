@@ -51,12 +51,14 @@ class MotionReference:
 
     @staticmethod
     def _ordered_joint_names(source_joint_names):
-        # Retargeted robots (for example TienKung) do not use Unitree names.
-        # Preserve their native order so 20-DoF motion arrays remain aligned.
-        if not any(name in UNITREE_JOINT_NAMES for name in source_joint_names):
-            return list(source_joint_names)
-        extra_names = [name for name in source_joint_names if name not in UNITREE_JOINT_NAMES]
-        return UNITREE_JOINT_NAMES + extra_names
+        # Retargeted robots (for example TienKung, rx_p2) may share a subset of
+        # Unitree joint names (e.g. waist_*_joint) but otherwise use their own
+        # naming convention.  Only fall back to the canonical Unitree order when
+        # every source joint is a Unitree G1 joint; otherwise preserve the
+        # native order so N-DoF motion arrays remain aligned.
+        if set(source_joint_names).issubset(UNITREE_JOINT_NAMES):
+            return UNITREE_JOINT_NAMES
+        return list(source_joint_names)
 
     def _reorder_joints(self, joint_data, source_joint_names):
         out = np.zeros((joint_data.shape[0], len(self.joint_names)), dtype=joint_data.dtype)

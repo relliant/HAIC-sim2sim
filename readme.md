@@ -66,6 +66,7 @@ python scripts/deploy_haic.py --task push_cart
 python scripts/deploy_haic.py --task push_wheelchair
 python scripts/deploy_haic.py --task skateboard
 python scripts/deploy_haic.py --task tienkung_box --policy /path/to/tienkung_box.onnx
+python scripts/deploy_haic.py --task rx_p2_box   --policy /path/to/rx_p2_box.onnx
 ```
 
 The `tienkung_box` task uses the 20-DoF TienKung model and the retargeted
@@ -74,6 +75,13 @@ checked into this sim2sim repository; export it from HAIC with
 `export_policy=true`, then pass its path with `--policy` (or set
 `TIENKUNG_POLICY`).  The task's MuJoCo model and motion data are included
 under `assets/robots/tienkung/` and `controller/motion/tienkung/`.
+
+The `rx_p2_box` task uses the 27-DoF `rx_p2_27dof_0721` model (waist 3-DoF,
+2-DoF wrists, no head) with the retargeted HAIC `move_mybox` reference
+motion.  As with TienKung, its ONNX policy is expected to be exported from
+HAIC's `RxP2/haic/move_mybox` task and passed via `--policy` (or
+`RX_P2_POLICY`).  The MuJoCo model, mesh set, and motion data live under
+`assets/robots/rx_p2/` and `controller/motion/rx_p2/`.
 
 
 

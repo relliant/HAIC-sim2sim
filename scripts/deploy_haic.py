@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from utils.intermimic import InterMimicRod
 from utils.tienkung import TienKungInterMimic
+from utils.rx_p2 import RxP2InterMimic
 from utils.sim import get_obs_from_mujoco, pd_control
 
 
@@ -72,6 +73,18 @@ TASKS = {
         "robot": "tienkung",
         "num_actuators": 20,
         "root_height": 1.0,
+    },
+    "rx_p2_box": {
+        # HAIC exports are intentionally kept outside this repository.  Use
+        # --policy or RX_P2_POLICY to point at the exported ONNX file.
+        "policy": os.environ.get(
+            "RX_P2_POLICY", "controller/policy/haic/rx_p2/box_1.onnx"
+        ),
+        "motion": "controller/motion/rx_p2/mirobotA/box_1",
+        "xml": "assets/robots/rx_p2/rx_p2_box.xml",
+        "robot": "rx_p2",
+        "num_actuators": 27,
+        "root_height": 0.65,
     },
 }
 
@@ -140,7 +153,10 @@ def resolve_project_path(path):
     return (PROJECT_ROOT / path).resolve()
 
 
-def validate_tasks(task_names=None, require_tienkung_policy=False):
+EXTERNAL_POLICY_ROBOTS = {"tienkung", "rx_p2"}
+
+
+def validate_tasks(task_names=None, require_external_policy=False):
     missing = []
     selected = task_names if task_names is not None else sorted(TASKS)
     for task_name in selected:
@@ -150,7 +166,7 @@ def validate_tasks(task_names=None, require_tienkung_policy=False):
         xml_path = resolve_project_path(task["xml"])
 
         if not policy_path.is_file() and (
-            task.get("robot") != "tienkung" or require_tienkung_policy
+            task.get("robot") not in EXTERNAL_POLICY_ROBOTS or require_external_policy
         ):
             missing.append(f"{task_name}: missing policy {policy_path}")
         if not motion_path.is_dir():
@@ -164,6 +180,12 @@ def validate_tasks(task_names=None, require_tienkung_policy=False):
 
     if missing:
         raise FileNotFoundError("Task asset check failed:\n" + "\n".join(missing))
+
+
+CONTROLLERS_BY_ROBOT = {
+    "tienkung": TienKungInterMimic,
+    "rx_p2": RxP2InterMimic,
+}
 
 
 class HaicDeployment:
@@ -187,7 +209,7 @@ class HaicDeployment:
         self.policy_output = None
         self.sim_steps_per_control = args.sim_steps_per_control
 
-        controller_cls = TienKungInterMimic if task.get("robot") == "tienkung" else InterMimicRod
+        controller_cls = CONTROLLERS_BY_ROBOT.get(task.get("robot"), InterMimicRod)
         self.controller = controller_cls(self.policy_path, self.motion_path)
         if self.num_actuators != self.controller.num_dof:
             raise ValueError(
@@ -232,9 +254,10 @@ class HaicDeployment:
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[:3] = [0.0, 0.0, self.root_height]
         self.data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
+        robot = TASKS[self.task_name].get("robot")
         default_pos = (
             self.controller.default_pos
-            if TASKS[self.task_name].get("robot") == "tienkung"
+            if robot in EXTERNAL_POLICY_ROBOTS
             else RECOVERY_STAND_DEFAULT_POS
         )
         self.data.qpos[7:7 + self.num_actuators] = default_pos
@@ -243,7 +266,12 @@ class HaicDeployment:
         )
         if object_joint_id >= 0:
             object_qpos = self.model.jnt_qposadr[object_joint_id]
-            self.data.qpos[object_qpos:object_qpos + 7] = [0.45, 0.0, 0.17, 1.0, 0.0, 0.0, 0.0]
+            box_pose = (
+                [0.376, 0.0, 0.177, 1.0, 0.0, 0.0, 0.0]
+                if robot == "rx_p2"
+                else [0.45, 0.0, 0.17, 1.0, 0.0, 0.0, 0.0]
+            )
+            self.data.qpos[object_qpos:object_qpos + 7] = box_pose
         self.data.qvel[:] = 0.0
         self.controller.reset_history()
         mujoco.mj_forward(self.model, self.data)
@@ -259,13 +287,20 @@ class HaicDeployment:
         if self.policy_output is None:
             self.update_policy()
 
+        target_dof_pos = self.policy_output.target_dof_pos
+        if hasattr(self.controller, "shape_target"):
+            # Reproduce Isaac Lab's per-physics-substep joint_target_clamp +
+            # joint_target_rate_limit ramp instead of jumping straight to the
+            # raw policy target once per control step.
+            target_dof_pos = self.controller.shape_target(target_dof_pos, self.sim_dt)
+
         qj = self.data.qpos[7:7 + self.num_actuators]
         dqj = self.data.qvel[6:6 + self.num_actuators]
         torque = pd_control(
-            self.policy_output.target_dof_pos,
+            target_dof_pos,
             qj,
             self.policy_output.dof_kps,
-            np.zeros_like(self.policy_output.target_dof_pos),
+            np.zeros_like(target_dof_pos),
             dqj,
             self.policy_output.dof_kds,
         )
@@ -278,9 +313,10 @@ class HaicDeployment:
         self.sim_time += self.sim_dt
 
     def sync_viewer(self):
-        pelvis_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
-        if pelvis_id >= 0:
-            self.viewer.cam.lookat[:] = self.data.xpos[pelvis_id]
+        root_body_name = "base_link" if TASKS[self.task_name].get("robot") == "rx_p2" else "pelvis"
+        root_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, root_body_name)
+        if root_id >= 0:
+            self.viewer.cam.lookat[:] = self.data.xpos[root_id]
         self.viewer.sync()
 
     def run(self):
@@ -337,11 +373,11 @@ def main():
     parser.add_argument("--viewer_dt", type=float, default=0.01)
     parser.add_argument(
         "--num_actuators", type=int, default=None,
-        help="Override the task actuator count (defaults to 29 for G1, 20 for TienKung)",
+        help="Override the task actuator count (defaults to 29 for G1, 20 for TienKung, 27 for RxP2)",
     )
     parser.add_argument(
         "--policy", type=Path, default=None,
-        help="Override the ONNX policy path; useful for the HAIC TienKung export",
+        help="Override the ONNX policy path; useful for HAIC TienKung/RxP2 exports",
     )
     parser.add_argument("--record_video", action="store_true")
     parser.add_argument("--video_width", type=int, default=1280)
@@ -364,13 +400,14 @@ def main():
 
     if args.policy is not None:
         TASKS[args.task] = {**TASKS[args.task], "policy": str(args.policy)}
-    validate_tasks(require_tienkung_policy=args.policy is not None)
     if args.check_assets:
+        validate_tasks()
         print("Available task triplets:")
         for task_name, task in TASKS.items():
             print(f"  {task_name}: {task['policy']} + {task['motion']} + {task['xml']}")
         return
 
+    validate_tasks(task_names=[args.task], require_external_policy=args.policy is not None)
     HaicDeployment(args).run()
 
 
